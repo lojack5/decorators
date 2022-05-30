@@ -9,13 +9,13 @@ __all__ = [
 ]
 
 
+import sys
 from functools import wraps
-from typing import Any, Callable, Generic, get_args, TypeVar
+from typing import Any, Callable, Generic, get_args, TypeVar, Union
 
-try:
-    # py 3.9+
+if sys.version_info >= (3, 10):
     from functools import cache
-except ImportError: # pragma: no cover
+else:
     from functools import lru_cache as cache
 
 
@@ -76,8 +76,8 @@ class ForwardWrapper:
     
     def __call__(
         self,
-        method_or_prop: Callable | property
-    ) -> Callable | property:
+        method_or_prop: Union[Callable, property]
+    ) -> Union[Callable, property]:
         """Create a forwarded method or property.
         
         :param method_or_prop: The unbound method or property on the forwarded

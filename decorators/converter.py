@@ -10,31 +10,44 @@ __all__ = [
 from functools import partial, wraps
 import inspect
 from inspect import Signature
-import types
+import sys
 from typing import Any, Callable, get_args, get_origin, get_type_hints, \
-    Union, TypeVar
+    Optional, Union, TypeVar
 
-try: 
-    # py 3.9+
+
+if sys.version_info >= (3, 10):
     from functools import cache
-except ImportError: # pragma: no cover
-    from functools import lru_cache as cache
-
-try:
-    # py 3.10+
     from typing import TypeAlias, TypeGuard
-except ImportError: # pragma: no cover
+    from types import UnionType
+    _sig_args = {'eval_str': True}
+    _UnionTypes = (Union, UnionType)
+else:
+    from functools import lru_cache as cache
     from typing_extensions import TypeAlias, TypeGuard
+    _sig_args = {}
+    _UnionTypes = (Union,)
 
 
-_UnionTypes = (Union,)
-if hasattr(types, 'UnionType'): # pragma: no branch
-    # py 3.10+
-    _UnionTypes = (Union, types.UnionType)
 _BoundConversion: TypeAlias = Callable[[Any], Any]
 _UnboundConversion: TypeAlias = Callable[[Any, Any], Any]
-_Conversion: TypeAlias = _BoundConversion | _UnboundConversion
+_Conversion: TypeAlias = Union[_BoundConversion, _UnboundConversion]
 T = TypeVar('T')
+
+
+def eval_annotation(method: Callable, annotation: Any) -> Any:
+    """Evaluate stringized type annotations on method.  This occurs if
+    `from __future__ import annotations` is used, or on python versions
+    past 3.10.
+    """
+    if isinstance(annotation, str):
+        locals = None
+        globals = getattr(method, '__globals__', None)
+        method = inspect.unwrap(method)
+        globals = getattr(method, '__globals__', globals)
+        locals = getattr(method, '__locals__', locals)
+        return eval(annotation, globals, locals)
+    else:
+        return annotation
 
 
 class _TypeConverter:
@@ -303,8 +316,8 @@ class ConversionWrapper:
     """
     def __init__(
             self,
-            return_converters: dict[type, _Conversion] | None = None,
-            input_converters: dict[type, _Conversion] | None = None,
+            return_converters: Optional[dict[type, _Conversion]] = None,
+            input_converters: Optional[dict[type, _Conversion]] = None,
         ) -> None:
         """Create a new wrapper utilizing the specified type converters.
 
@@ -320,8 +333,9 @@ class ConversionWrapper:
 
     def _get_callable_converters(
             self,
+            method: Callable,
             signature: Signature
-        ) -> tuple[_TypeConverter, _ArgsConverter | None]:
+        ) -> tuple[_TypeConverter, Optional[_ArgsConverter]]:
         """Used internally to create input and return type converters for a
         method, as determined by its signature.
 
@@ -336,7 +350,7 @@ class ConversionWrapper:
         type_hints = signature.parameters
         conversions = {
             name: self._input_converters.get_type_converter(
-                      parameter.annotation)
+                      eval_annotation(method, parameter.annotation))
             for name, parameter in type_hints.items()
             if name != 'return'
         }
@@ -347,7 +361,8 @@ class ConversionWrapper:
             input_converter = None
         else:
             input_converter = _ArgsConverter(signature, conversions)
-        return_annotation = signature.return_annotation
+        return_annotation = eval_annotation(method,
+             signature.return_annotation)
         return_converter = self._return_converters.get_type_converter(
             return_annotation)
         return return_converter, input_converter
@@ -355,7 +370,7 @@ class ConversionWrapper:
     def convert_callable(
             self,
             method: Callable,
-            signature: Signature | None = None
+            signature: Optional[Signature] = None
         ) -> Callable:
         """Create a new method which applies type conversions to input values
         and/or return values.  If a function signature is not supplied, it is
@@ -368,10 +383,10 @@ class ConversionWrapper:
             method if no conversion are necessary.
         """
         if not signature:
-            signature = inspect.signature(method, eval_str=True)
+            signature = inspect.signature(method, **_sig_args)
         print(f'Creating wrapper for {method}, using {signature!r}.')
         return_converter, input_converter = self._get_callable_converters(
-            signature)
+            method, signature)
         if return_converter is _noop_converter:
             if not input_converter:
                 # No conversions needed
@@ -422,17 +437,20 @@ class ConversionWrapper:
         :param get_annotation: Type annotation assumed for the property getter.
         :param set_annotation: Type annotation assumed for the property setter.
         """
-        if get_annotation is None:
-            if (fget := prop.fget):
-                get_annotation = get_type_hints(fget).get('return', None)
+        fget, fset = prop.fget, prop.fset
+        if get_annotation is None and fget:
+            get_annotation = get_type_hints(fget).get('return', None)
+        if fget:
+            get_annotation = eval_annotation(fget, get_annotation)
         get_converter = self._return_converters.get_type_converter(
             get_annotation)
-        if set_annotation is None:
-            if (fset := prop.fset):
-                hints = get_type_hints(fset)
-                hints.pop('return', None)
-                if hints:
-                    set_annotation = next(iter(hints.values()))
+        if set_annotation is None and fset:
+            hints = get_type_hints(fset)
+            hints.pop('return', None)
+            if hints:
+                set_annotation = next(iter(hints.values()))
+        if fset:
+            set_annotation = eval_annotation(fset, set_annotation)
         set_converter = self._input_converters.get_type_converter(
             set_annotation)
         return (get_converter, set_converter)
@@ -492,8 +510,8 @@ class ConversionWrapper:
 
     def __call__(
             self,
-            method_or_prop: Callable | property
-        ) -> Callable | property:
+            method_or_prop: Union[Callable, property]
+        ) -> Union[Callable, property]:
         """Wrap a method or property with conversions to the return types
         and input types.
 
@@ -539,11 +557,12 @@ class ConversionWrapper:
             set_annotation=set_annotation
         )
 
-    def signature(self, method_or_str: Callable | str) -> Callable:
-        """Sepecify a function signature to use for the converted method.
-        The signature can be specified in either string form or via a second
-        method.  This can be used to supply type annotations to library methods
-        that are either unannotated, or annotations cannot be otherwise
+    def signature(self, method_or_str: Union[Callable, str]) -> Callable:
+        """Sepecify a function signature to use for the converted method. On
+        python versions under 3.10, the signature must be supplied via a
+        method.  From python 3.10 and on, you may also supply the signature
+        via a string. This can be used to supply type annotations to library
+        methods that are either unannotated, or annotations cannot be otherwise
         introspected.
 
         :param method_or_str: Either a method or a signature string.
@@ -562,12 +581,17 @@ class ConversionWrapper:
                 return str(a)
         """
         if isinstance(method_or_str, str):
+            #if sys.version_info < (3, 10):
+            #    raise TypeError(
+            #        f'ConversionWrapper.signature cannot be used with string '
+            #        f'annotations on python versions under 3.10'
+            #    )
             # Handle string specified signatures
             globs = globals()
             locals = {}
             code = f'def foo{method_or_str}: pass'
             exec(code, globs, locals)
-            signature = inspect.signature(locals['foo'], eval_str=True)
+            signature = inspect.signature(locals['foo'], **_sig_args)
         else:
-            signature = inspect.signature(method_or_str, eval_str=True)
+            signature = inspect.signature(method_or_str, **_sig_args)
         return partial(self.convert_callable, signature=signature)

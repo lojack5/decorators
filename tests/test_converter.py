@@ -1,7 +1,7 @@
 # type: ignore
 __author__ = 'Lojack'
 
-
+import sys
 from typing import Union
 
 import pytest
@@ -44,7 +44,7 @@ def converting_class():
 
 def test_creation_error():
     with pytest.raises(TypeError):
-        ConversionWrapper({int | str: bool})
+        ConversionWrapper({Union[int, str]: bool})
 
 
 class TestMethods:
@@ -184,12 +184,13 @@ class TestUnion:
         assert method is convert(method)
 
     def test_new_style(self, convert: ConversionWrapper):
-        @convert
-        def method(a: int | float):
-            return a
-        assert method(1) is True
-        assert method(1.5) == 1
-        assert method('foo') == 'foo'
+        if sys.version_info >= (3, 10):
+            @convert
+            def method(a: int | float):
+                return a
+            assert method(1) is True
+            assert method(1.5) == 1
+            assert method('foo') == 'foo'
         
     def test_all(self, convert: ConversionWrapper):
         @convert
