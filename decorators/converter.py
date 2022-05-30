@@ -13,11 +13,12 @@ import inspect
 from inspect import Signature
 import types
 from typing import Any, get_args, get_origin, get_type_hints, TypeAlias, \
-    TypeVar, Union
+    TypeGuard, TypeVar, Union
 
 
 _UnionTypes = (Union,)
 if hasattr(types, 'UnionType'): # pragma: no branch
+    # py 3.10+
     _UnionTypes = (Union, types.UnionType)
 _BoundConversion: TypeAlias = Callable[[Any], Any]
 _UnboundConversion: TypeAlias = Callable[[Any, Any], Any]
@@ -45,7 +46,7 @@ class _UnionConverter(_TypeConverter):
     """
     _converters: dict[type, _TypeConverter]
 
-    def __init__(self, converters: dict[type, _Conversion]):
+    def __init__(self, converters: dict[type, _TypeConverter]):
         self._converters = converters
 
     def __call__(self, value: Any) -> Any:
@@ -86,18 +87,21 @@ class _Converter(_TypeConverter):
     """
     _convert: _BoundConversion
 
-    def __init__(self, converter: _Conversion) -> None:
+    def __init__(self, converter: _BoundConversion) -> None:
         self._convert = converter
 
     def __call__(self, value: Any) -> Any:
         return self._convert(value)
 
 
-class _UnboundConverter(_Converter, _UnboundTypeConverter):
+class _UnboundConverter(_UnboundTypeConverter):
     """A converter which converts a type using an unbound instance or class
     method.
     """
     _convert: _UnboundConversion
+
+    def __init__(self, converter: _UnboundConversion) -> None:
+        self._convert = converter
 
     def __call__(self, instance: Any, value: Any) -> Any:
         return self._convert(instance, value)
@@ -129,7 +133,7 @@ class _TypeConverterFactory:
         self._converters = {
             self.fixup_none(source_type): _UnboundConverter(converter)
                                           if self.is_two_arg(converter)
-                                          else _Converter(converter)
+                                          else _Converter(converter) # type: ignore
             for source_type, converter in converters.items()
             if converter is not _noop_converter
         }
@@ -160,7 +164,7 @@ class _TypeConverterFactory:
         return get_origin(annotation) in _UnionTypes
 
     @staticmethod
-    def is_two_arg(converter: _Conversion) -> bool:
+    def is_two_arg(converter: _Conversion) -> TypeGuard[_UnboundConversion]:
         """Lazy way to determine if a callable is an unbound instance or class
         method.  Note this will falsely detect bare methods with two arguments
         as unbound class or instance methods.
@@ -190,7 +194,7 @@ class _TypeConverterFactory:
                     for used_type in used_types))
         }
         if not used_converters:
-            return _noop_converter
+            return _noop_converter  # type: ignore
         unbound = list(map(self.is_two_arg, used_converters.values()))
         if all(unbound):
             # All unbound methods used for conversions
@@ -215,7 +219,7 @@ class _TypeConverterFactory:
         annotation = self.fixup_none(annotation)
         if self.is_union(annotation):
             return self.create_union_converter(annotation)
-        return self._converters.get(annotation, _noop_converter)
+        return self._converters.get(annotation, _noop_converter) # type: ignore
 
 
 class _ArgsConverter:
@@ -298,6 +302,8 @@ class ConversionWrapper:
         :param input_converters: A mapping of types to conversion methods to be
             used when the specified type is an input to a wrapped method.
         """
+        return_converters = return_converters or {}
+        input_converters = input_converters or {}
         self._return_converters = _TypeConverterFactory(return_converters)
         self._input_converters = _TypeConverterFactory(input_converters)
 
@@ -369,12 +375,13 @@ class ConversionWrapper:
             if not input_converter:
                 # Return conversion only, using an unbound method
                 @wraps(method)
-                def wrapped(instance, *args, **kwargs):
-                    return return_converter(instance, method(instance, *args, **kwargs))
+                def wrapped(instance, *args, **kwargs): # type: ignore
+                    return return_converter(instance,
+                                            method(instance, *args, **kwargs))
             else:
                 # Input and return conversion, using unbound methods
                 @wraps(method)
-                def wrapped(instance, *args, **kwargs):
+                def wrapped(instance, *args, **kwargs): # type: ignore
                     args, kwargs = input_converter(instance, *args, **kwargs)
                     return return_converter(instance, method(*args, **kwargs))
         else:
@@ -443,7 +450,7 @@ class ConversionWrapper:
             prop, get_annotation, set_annotation)
         if not (fget := prop.fget) or get_converter is _noop_converter:
             # No conversion needed on getter
-            getter = fget
+            getter = fget   # type: ignore
         elif isinstance(get_converter, _UnboundTypeConverter):
             # Convert on getter result with an unbound method
             @wraps(fget)
@@ -456,7 +463,7 @@ class ConversionWrapper:
                 return get_converter(fget(instance))
         if not (fset := prop.fset) or set_converter is _noop_converter:
             # No conversion needed on setter
-            setter = fset
+            setter = fset   # type: ignore
         elif isinstance(set_converter, _UnboundTypeConverter):
             # Convert on setter with an unbound method
             @wraps(fset)
@@ -549,6 +556,7 @@ class ConversionWrapper:
             locals = {}
             code = f'def foo{method_or_str}: pass'
             exec(code, globs, locals)
-            method_or_str: Callable = locals['foo']
-        signature = inspect.signature(method_or_str, eval_str=True)
+            signature = inspect.signature(locals['foo'], eval_str=True)
+        else:
+            signature = inspect.signature(method_or_str, eval_str=True)
         return partial(self.convert_callable, signature=signature)

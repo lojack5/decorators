@@ -41,19 +41,19 @@ class ForwardWrapper:
             def getter(instance) -> Any:
                 return fget(resolve(instance))
         else:
-            getter = None
+            getter = None   # type: ignore
         if fset:
             @wraps(fset)
             def setter(instance, value: Any) -> None:
                 fset(resolve(instance), value)
         else:
-            setter = None
+            setter = None   # type: ignore
         if fdel:
             @wraps(fdel)
             def deleter(instance) -> None:
                 fdel(resolve(instance))
         else:
-            deleter = None
+            deleter = None  # type: ignore
         return property(getter, setter, deleter, prop.__doc__)
 
     def wrap_method(self, method: Callable) -> Callable:
@@ -98,7 +98,7 @@ class ForwardWrapper:
                 pass
         """
         def wrapper(_func: Callable) -> Callable:
-            return self(method)
+            return self(method) # type: ignore
         return wrapper
 
 
@@ -124,11 +124,11 @@ class AForwarder(Generic[T]):
 
     @classmethod
     @cache
-    def _wrapped_type(cls: type[C]) -> type[T]:
+    def _wrapped_type(cls: type[C]) -> type[T]: # type: ignore
         """Get the generic type `T` this class was created with."""
         # NOTE: This is hacky in that it relies on internal details of the
         # `typing` module.
-        generic = cls.__orig_bases__[0]
+        generic = cls.__orig_bases__[0]     # type: ignore
         return get_args(generic)[0]
 
     def __init__(self, *args, **kwargs) -> None:
@@ -151,7 +151,7 @@ class AForwarder(Generic[T]):
         return self._wrapped_object
 
     @classmethod
-    def wrap(cls: type[C], to_wrap_instance: Any) -> C:
+    def wrap(cls: type[C], to_wrap_instance: Any) -> C: # type: ignore
         return cls(_do_wrap=to_wrap_instance)
 
 
@@ -163,7 +163,7 @@ class _ForwarderMeta(type):
     namespace of `Forwarder` objects.
     """
     @classmethod
-    def __prepare__(metacls, name, bases) -> dict:
+    def __prepare__(cls, name, bases) -> dict:
         # Inject `forward` into the namespace
         return {'forward': forward}
 

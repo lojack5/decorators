@@ -1,3 +1,4 @@
+# type: ignore
 __author__ = 'Lojack'
 
 from typing import TYPE_CHECKING

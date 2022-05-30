@@ -1,3 +1,4 @@
+# type: ignore
 __author__ = 'Lojack'
 
 
