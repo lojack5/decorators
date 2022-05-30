@@ -2,7 +2,7 @@
 __author__ = 'Lojack'
 
 import sys
-from typing import Union
+from typing import Union, Tuple
 
 import pytest
 
@@ -139,11 +139,11 @@ class TestUnbound:
                 return (a,b)
 
             @convert
-            def all_unbound(self, a: bool, b: bool) -> tuple[bool, bool]:
+            def all_unbound(self, a: bool, b: bool) -> Tuple[bool, bool]:
                 return self._impl(a,b)
 
             @convert
-            def mixed(self, a:bool, b: float) -> tuple[bool, float]:
+            def mixed(self, a:bool, b: float) -> Tuple[bool, float]:
                 return self._impl(a,b)
 
             @convert

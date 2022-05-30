@@ -11,8 +11,8 @@ from functools import partial, wraps
 import inspect
 from inspect import Signature
 import sys
-from typing import Any, Callable, get_args, get_origin, get_type_hints, \
-    Optional, Union, TypeVar
+from typing import Any, Callable, Dict, get_args, get_origin, get_type_hints, \
+    Optional, Union, Tuple, TypeVar
 
 
 if sys.version_info >= (3, 10):
@@ -68,9 +68,9 @@ class _UnionConverter(_TypeConverter):
     converter for each type. The converters are not unbound instance/class
     methods. If no matching converter is found, the value is return unchanged.
     """
-    _converters: dict[type, _TypeConverter]
+    _converters: Dict[type, _TypeConverter]
 
-    def __init__(self, converters: dict[type, _TypeConverter]):
+    def __init__(self, converters: Dict[type, _TypeConverter]):
         self._converters = converters
 
     def __call__(self, value: Any) -> Any:
@@ -144,9 +144,9 @@ class _TypeConverterFactory:
     """Machinery for managing all the type converters, and creating Union
     Converters on the fly.  Converters are accessed via type annotations.
     """
-    _converters: dict[type, _TypeConverter]
+    _converters: Dict[type, _TypeConverter]
 
-    def __init__(self, converters: dict[type, _Conversion]):
+    def __init__(self, converters: Dict[type, _Conversion]):
         for annotation in converters:
             if self.is_union(annotation):
                 raise TypeError(
@@ -249,9 +249,9 @@ class _TypeConverterFactory:
 class _ArgsConverter:
     """Internal class which converts input values for a function."""
     _sig: Signature
-    _conversions: dict[str, _TypeConverter]
+    _conversions: Dict[str, _TypeConverter]
 
-    def __init__(self, sig: Signature, conversions: dict[str, _TypeConverter]):
+    def __init__(self, sig: Signature, conversions: Dict[str, _TypeConverter]):
         self._sig = sig
         self._conversions = conversions
 
@@ -316,8 +316,8 @@ class ConversionWrapper:
     """
     def __init__(
             self,
-            return_converters: Optional[dict[type, _Conversion]] = None,
-            input_converters: Optional[dict[type, _Conversion]] = None,
+            return_converters: Optional[Dict[type, _Conversion]] = None,
+            input_converters: Optional[Dict[type, _Conversion]] = None,
         ) -> None:
         """Create a new wrapper utilizing the specified type converters.
 
@@ -335,7 +335,7 @@ class ConversionWrapper:
             self,
             method: Callable,
             signature: Signature
-        ) -> tuple[_TypeConverter, Optional[_ArgsConverter]]:
+        ) -> Tuple[_TypeConverter, Optional[_ArgsConverter]]:
         """Used internally to create input and return type converters for a
         method, as determined by its signature.
 
@@ -429,7 +429,7 @@ class ConversionWrapper:
             prop: property,
             get_annotation: Any = None,
             set_annotation: Any = None
-        ) -> tuple[_TypeConverter, _TypeConverter]:
+        ) -> Tuple[_TypeConverter, _TypeConverter]:
         """Used internally to create getter and setter type converter objects.
 
         :param prop: The property object to introspect `return_annotation` and
