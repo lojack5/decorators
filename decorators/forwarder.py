@@ -9,9 +9,14 @@ __all__ = [
 ]
 
 
-from collections.abc import Callable
-from functools import cache, wraps
-from typing import Any, Generic, get_args, TypeVar
+from functools import wraps
+from typing import Any, Callable, Generic, get_args, TypeVar
+
+try:
+    # py 3.9+
+    from functools import cache
+except ImportError: # pragma: no cover
+    from functools import lru_cache as cache
 
 
 class ForwardWrapper:

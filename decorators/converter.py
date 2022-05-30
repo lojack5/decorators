@@ -7,13 +7,24 @@ __all__ = [
 ]
 
 
-from collections.abc import Callable
-from functools import cache, partial, wraps
+from functools import partial, wraps
 import inspect
 from inspect import Signature
 import types
-from typing import Any, get_args, get_origin, get_type_hints, TypeAlias, \
-    TypeGuard, TypeVar, Union
+from typing import Any, Callable, get_args, get_origin, get_type_hints, \
+    Union, TypeVar
+
+try: 
+    # py 3.9+
+    from functools import cache
+except ImportError: # pragma: no cover
+    from functools import lru_cache as cache
+
+try:
+    # py 3.10+
+    from typing import TypeAlias, TypeGuard
+except ImportError: # pragma: no cover
+    from typing_extensions import TypeAlias, TypeGuard
 
 
 _UnionTypes = (Union,)

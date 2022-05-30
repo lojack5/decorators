@@ -1,0 +1,3 @@
+pytest
+pytest-cov
+typing_extensions ; python_version < '3.10'
